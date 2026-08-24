@@ -16,6 +16,7 @@ from astrbot.api.event import filter
 from astrbot.api.message_components import Plain
 from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.api.star import Context, Star
+from astrbot.core.agent.message import TextPart
 
 from .segmentation import (
     build_segmentation_prompt,
@@ -110,12 +111,17 @@ class SmartSegmentationPlugin(Star):
         if not interrupted:
             return
 
-        request.extra_user_content_parts.append(
-            {
-                "type": "text",
-                "text": self._build_interruption_context(interrupted),
-            }
+        interruption_part = TextPart(
+            text=self._build_interruption_context(interrupted),
         )
+
+        # AstrBot >= 4.24 支持将额外内容标为仅本轮 provider 可见，
+        # 避免被持久化进会话历史；旧版没有该方法时仍保持兼容。
+        mark_as_temp = getattr(interruption_part, "mark_as_temp", None)
+        if callable(mark_as_temp):
+            mark_as_temp()
+
+        request.extra_user_content_parts.append(interruption_part)
         logger.info(
             "智能分段已向本轮 LLM 注入 %s 条被打断的未发送消息",
             len(interrupted),
